@@ -31,7 +31,7 @@ SELECT
     under_odds,
     over_odds,
     div_game
-FROM 'games.parquet'
+FROM 'data/games.parquet'
 WHERE season >= 2002 AND home_score IS NOT NULL and away_score IS NOT NULL
 ORDER BY season, gameday
 

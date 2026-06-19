@@ -13,8 +13,18 @@ WITH
           game_id,
           game_half,
           drive,
-          posteam,
-          defteam,
+          CASE
+            WHEN posteam = 'SD' THEN 'LAC'
+            WHEN posteam = 'STL' THEN 'LA'
+            WHEN posteam = 'OAK' THEN 'LV'
+            ELSE posteam
+          END AS posteam,
+          CASE
+            WHEN defteam = 'SD' THEN 'LAC'
+            WHEN defteam = 'STL' THEN 'LA'
+            WHEN defteam = 'OAK' THEN 'LV'
+            ELSE defteam
+          END AS defteam,
           fixed_drive_result,
           ROW_NUMBER() OVER (
             PARTITION BY
@@ -25,9 +35,9 @@ WITH
               play_id ASC
           ) AS rn
         FROM
-          'pbp.parquet'
+          'data/pbp.parquet'
         WHERE
-          season >= 2016
+          season >= 2002
           AND posteam IS NOT NULL
           AND defteam IS NOT NULL
           AND drive IS NOT NULL
@@ -75,7 +85,19 @@ WITH
         ORDER BY
           drive ASC ROWS BETWEEN CURRENT ROW
           AND UNBOUNDED FOLLOWING
-      ) AS next_scoring_team
+      ) AS next_scoring_team,
+      FIRST_VALUE (
+        CASE
+          WHEN scoring_result IS NOT NULL THEN drive
+        END IGNORE NULLS
+      ) OVER (
+        PARTITION BY
+          game_id,
+          game_half
+        ORDER BY
+          drive ASC ROWS BETWEEN CURRENT ROW
+          AND UNBOUNDED FOLLOWING
+      ) AS next_scoring_drive
     FROM
       scored
     ORDER BY
@@ -109,27 +131,65 @@ WITH
   )
 SELECT
   pbp.game_id,
-  pbp.season, 
+  pbp.season,
   pbp.play_id,
   pbp.drive,
   pbp.fixed_drive_result,
-  pbp.home_team,
-  pbp.away_team,
+  CASE
+    WHEN pbp.home_team = 'SD' THEN 'LAC'
+    WHEN pbp.home_team = 'STL' THEN 'LA'
+    WHEN pbp.home_team = 'OAK' THEN 'LV'
+    ELSE pbp.home_team
+  END AS home_team,
+  CASE
+    WHEN pbp.away_team = 'SD' THEN 'LAC'
+    WHEN pbp.away_team = 'STL' THEN 'LA'
+    WHEN pbp.away_team = 'OAK' THEN 'LV'
+    ELSE pbp.away_team
+  END AS away_team,
   pbp.game_half,
   pbp.week,
   pbp.play_type,
+  pbp.timeout,
   pbp.season_type,
   pbp.yardline_100,
   pbp.yrdln,
+  pbp.penalty,
+  pbp.penalty_type,
+  CASE
+    WHEN pbp.penalty_team = 'SD' THEN 'LAC'
+    WHEN pbp.penalty_team = 'STL' THEN 'LA'
+    WHEN pbp.penalty_team = 'OAK' THEN 'LV'
+    ELSE pbp.penalty_team
+  END AS penalty_team,
+  pbp.penalty_yards,
   pbp.down,
   pbp.goal_to_go,
   pbp.time,
   pbp.ydstogo,
-  pbp.posteam,
+  CASE
+    WHEN pbp.posteam = 'SD' THEN 'LAC'
+    WHEN pbp.posteam = 'STL' THEN 'LA'
+    WHEN pbp.posteam = 'OAK' THEN 'LV'
+    ELSE pbp.posteam
+  END AS posteam,
+  CASE
+    WHEN pbp.posteam = 'SD' THEN 'LAC'
+    WHEN pbp.posteam = 'STL' THEN 'LA'
+    WHEN pbp.posteam = 'OAK' THEN 'LV'
+    ELSE pbp.posteam
+  END AS pos_team,
+  CASE
+    WHEN pbp.defteam = 'SD' THEN 'LAC'
+    WHEN pbp.defteam = 'STL' THEN 'LA'
+    WHEN pbp.defteam = 'OAK' THEN 'LV'
+    ELSE pbp.defteam
+  END AS defteam,
   pbp.posteam_type,
-  pbp.defteam,
+  pbp.posteam_timeouts_remaining,
+  pbp.defteam_timeouts_remaining,
   pbp.sp,
-  pbp.qtr, 
+  pbp.qtr,
   pbp.field_goal_result,
   pbp.extra_point_attempt,
   pbp.extra_point_result,
@@ -137,7 +197,7 @@ SELECT
   pbp.two_point_conv_result,
   pbp.posteam_score,
   pbp.defteam_score,
-  pbp.posteam_score - pbp.defteam_score AS score_diff, 
+  pbp.posteam_score - pbp.defteam_score AS score_diff,
   pbp.posteam_score_post,
   pbp.defteam_score_post,
   pbp.no_score_prob,
@@ -150,34 +210,41 @@ SELECT
   ep.next_score,
   ep.next_scoring_team,
   ep.next_score_label,
-  CASE WHEN pbp.home_team = pbp.posteam THEN 1 ELSE 0 END AS home_advantage,
-   -- Split time string into minutes and seconds
+  ep.next_scoring_drive,
+  pbp.drive_play_id_started,
+  pbp.drive_play_id_ended,
+  pbp.special,
+  CASE
+    WHEN home_team = pos_team THEN 1
+    ELSE 0
+  END AS home_advantage,
+  -- Split time string into minutes and seconds
   CAST(SPLIT_PART(time, ':', 1) AS INTEGER) AS minutes,
   CAST(SPLIT_PART(time, ':', 2) AS INTEGER) AS seconds,
-  
   -- Seconds left in half
   CASE
     WHEN qtr IN (1, 3) THEN
-      -- First quarter of each half: full quarter remaining + time on clock
-      (CAST(SPLIT_PART(time, ':', 1) AS INTEGER) * 60 +
-       CAST(SPLIT_PART(time, ':', 2) AS INTEGER)) + 900
+    -- First quarter of each half: full quarter remaining + time on clock
+    (
+      CAST(SPLIT_PART(time, ':', 1) AS INTEGER) * 60 + CAST(SPLIT_PART(time, ':', 2) AS INTEGER)
+    ) + 900
     WHEN qtr IN (2, 4) THEN
-      -- Second quarter of each half: just time on clock
-      (CAST(SPLIT_PART(time, ':', 1) AS INTEGER) * 60 +
-       CAST(SPLIT_PART(time, ':', 2) AS INTEGER))
+    -- Second quarter of each half: just time on clock
+    (
+      CAST(SPLIT_PART(time, ':', 1) AS INTEGER) * 60 + CAST(SPLIT_PART(time, ':', 2) AS INTEGER)
+    )
     WHEN qtr = 5 THEN
-      -- Overtime
-      (CAST(SPLIT_PART(time, ':', 1) AS INTEGER) * 60 +
-       CAST(SPLIT_PART(time, ':', 2) AS INTEGER))
+    -- Overtime
+    (
+      CAST(SPLIT_PART(time, ':', 1) AS INTEGER) * 60 + CAST(SPLIT_PART(time, ':', 2) AS INTEGER)
+    )
   END AS seconds_left_in_half
 FROM
-  'pbp.parquet' pbp
-INNER JOIN ep_drive_labels ep ON pbp.game_id = ep.game_id
+  'data/pbp.parquet' pbp
+  INNER JOIN ep_drive_labels ep ON pbp.game_id = ep.game_id
   AND ep.game_half = pbp.game_half
   AND pbp.drive = ep.drive
 WHERE
-  pbp.season >= 2016
+  pbp.season >= 2002
   AND pbp.play_type != 'kickoff'
   AND pbp.play_type != 'no_play'
-  
-  

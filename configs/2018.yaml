@@ -1,0 +1,10 @@
+train_start_season: 2002
+train_end_season: 2015
+test_season: 2016
+epochs: 50
+cql_alpha: 0.2
+lr: 1e-4
+batch_size: 256
+checkpoint_path: models/2016.pt
+
+
