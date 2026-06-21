@@ -132,6 +132,7 @@ WITH
 SELECT
   pbp.game_id,
   pbp.season,
+  pbp.game_date, 
   pbp.play_id,
   pbp.drive,
   pbp.fixed_drive_result,

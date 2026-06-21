@@ -1,6 +1,6 @@
 WITH current_state AS (
   SELECT
-    season, game_id, season_type, play_id, drive, next_scoring_drive,
+    season, game_id, season_type, game_date, play_id, drive, next_scoring_drive,
     play_type, down, ydstogo, yardline_100,
     score_diff,posteam_timeouts_remaining, defteam_timeouts_remaining,
     posteam_score_post - defteam_score_post AS score_diff_post,
@@ -53,7 +53,7 @@ lead_change_plays AS (
 
 q_dataset AS (
   SELECT
-    j.play_id, j.drive, j.season_type, j.game_id, j.season, j.posteam, j.defteam, j.down, j.ydstogo/10.0 as ydstogo, j.yardline_100/100.0 as yardline_100, j.score_diff/8.0 as score_diff,
+    j.play_id, j.drive, j.season_type, j.game_id, j.game_date, j.season, j.posteam, j.defteam, j.down, j.ydstogo/10.0 as ydstogo, j.yardline_100/100.0 as yardline_100, j.score_diff/8.0 as score_diff,
     j.seconds_left_in_half/1800.0 as seconds_left_in_half,
     CASE WHEN j.game_half = 'Half1' THEN 0
          WHEN j.game_half = 'Half2' THEN 1

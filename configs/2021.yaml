@@ -1,0 +1,19 @@
+train_start_season: 2010
+train_end_season: 2020
+test_season: 2021
+epochs: 50
+cql_alpha: 0.2
+lr: 0.0001
+batch_size: 256
+gamma: 0.8
+hidden_dim: 128
+target_update_freq: 5000
+checkpoint_path: models/2021/
+device: cuda
+start_seed: 0
+end_seed: 9
+data: data/offline_rl.parquet
+
+
+
+
