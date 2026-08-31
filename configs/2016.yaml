@@ -1,16 +1,17 @@
-train_start_season: 2002
+train_start_season: 2005
 train_end_season: 2015
 test_season: 2016
-epochs: 1
+epochs: 50
 cql_alpha: 0.2
 lr: 0.0001
 batch_size: 256
 gamma: 0.8
 hidden_dim: 128
 target_update_freq: 5000
-checkpoint_path: models/2016.pt
-device: mps
-seed: 2026
+checkpoint_path: models/2016/
+device: cuda
+start_seed: 0
+end_seed: 29
 data: data/offline_rl.parquet
 
 

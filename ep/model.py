@@ -15,7 +15,7 @@ import os
 
 from blitz.modules import BayesianLinear
 from blitz.utils import variational_estimator
-
+from xgboost import XGBClassifier
 
 # Behavior Cloning
 def train_bc_baseline_model(start_season, end_season, eval_season,bc_path,seed):
@@ -32,7 +32,26 @@ def train_bc_baseline_model(start_season, end_season, eval_season,bc_path,seed):
     for i, action in enumerate(["pass","run","punt","field_goal"]):
         test_df[f"{action}_prob"] = y_prob[:, i]
 
-    test_df.to_parquet(bc_path,index=False)
+    test_df.to_parquet(bc_path,index=False, compression="zstd")
+
+# Behavior Cloning XGBoost
+def train_bc_xgboost_model(start_season, end_season, eval_season,bc_predictions_path,bc_model_path, seed):
+    df = pd.read_parquet("data/offline_rl.parquet")
+    X_test = df[df.season == eval_season][OBS_COLS].to_numpy()
+    test_df = df[df.season == eval_season]
+    df = df[df.season.between(start_season, end_season)]
+    y = df["play_type"].to_numpy()
+    X = df[OBS_COLS].to_numpy()
+
+    model = XGBClassifier(seed=seed, booster='dart', rate_drop=0.2, skip_drop=0.2)
+    model.fit(X, y)
+    y_prob = model.predict_proba(X_test)
+    for i, action in enumerate(["pass","run","punt","field_goal"]):
+        test_df[f"{action}_prob"] = y_prob[:, i]
+
+    test_df.to_parquet(bc_predictions_path,index=False, compression="zstd")
+    model.save_model(bc_model_path)
+
 
 
 

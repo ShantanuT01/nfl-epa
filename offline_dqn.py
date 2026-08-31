@@ -61,7 +61,7 @@ from pathlib import Path
 # ──────────────────────────────────────────
 
 from ep.config import get_args
-from ep.model import train_dqn, QNetwork, BayesianQNetwork, get_action_values, train_bc_baseline_model
+from ep.model import train_dqn, QNetwork, get_action_values, train_bc_baseline_model, train_bc_xgboost_model
 from ep.dataset import OBS_DIM, OBS_COLS
 
 
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         trained_model, action_labels = train_dqn(args, q_online, q_target)
         data = torch.load(os.path.join(args.checkpoint_path,f"{seed}.pt"),weights_only=False)
         Path(f"policy/{args.test_season}").mkdir(parents=True, exist_ok=True)
-        train_bc_baseline_model(args.train_start_season, args.train_end_season, args.test_season,f"policy/{args.test_season}/baseline_{args.seed}.parquet", args.seed)
+        train_bc_xgboost_model(args.train_start_season, args.train_end_season, args.test_season,f"policy/{args.test_season}/baseline_{args.seed}.parquet",f"policy/{args.test_season}/baseline_{args.seed}.ubj", args.seed)
         action_labels = data["action_labels"]
         trained_model = QNetwork(OBS_DIM, len(action_labels), args.hidden_dim)
         trained_model.load_state_dict(data["model_state"])
@@ -114,5 +114,5 @@ if __name__ == "__main__":
         df["EP"] = df["pass"] * df["pass_prob"] + df["run"] * df["run_prob"] + df["punt"] * df["punt_prob"] + df["field_goal"] * df["field_goal_prob"]
         df["seed"] = seed
         Path(f"evaluations/{args.test_season}").mkdir(parents=True, exist_ok=True)
-        df.to_parquet(f"evaluations/{args.test_season}/{args.seed}.parquet")
+        df.to_parquet(f"evaluations/{args.test_season}/{args.seed}.parquet",index=False, compression='zstd')
    
