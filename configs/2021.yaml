@@ -11,7 +11,7 @@ target_update_freq: 5000
 checkpoint_path: models/2021/
 device: cuda
 start_seed: 0
-end_seed: 9
+end_seed: 29
 data: data/offline_rl.parquet
 
 
