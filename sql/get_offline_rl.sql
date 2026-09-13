@@ -54,7 +54,9 @@ lead_change_plays AS (
 q_dataset AS (
   SELECT
     j.play_id, j.drive, j.season_type, j.game_id, j.game_date, j.season, j.posteam, j.defteam, j.down, j.ydstogo/10.0 as ydstogo, j.yardline_100/100.0 as yardline_100, j.score_diff/8.0 as score_diff,
-    j.seconds_left_in_half/1800.0 as seconds_left_in_half,
+    CASE WHEN (j.game_half = 'Half1' or j.game_half = 'Half2') THEN j.seconds_left_in_half/1800.0 
+    WHEN (j.game_half = 'Overtime' AND (j.season_type = 'POST' OR j.season < 2017)) THEN  j.seconds_left_in_half/900.0 
+    ELSE  j.seconds_left_in_half/600.0 END as seconds_left_in_half,
     CASE WHEN j.game_half = 'Half1' THEN 0
          WHEN j.game_half = 'Half2' THEN 1
          ELSE 2 END AS game_half,
