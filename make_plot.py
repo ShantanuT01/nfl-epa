@@ -12,7 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 import xgboost as xgb
-
+from tqdm import tqdm
 # For classification tasks
 
 matplotlib.rcParams['figure.dpi'] = 300
@@ -24,20 +24,20 @@ if __name__ == "__main__":
     color_map = {1: "red",2:"green",3:"blue",4:"purple"}
     for down in range(1,5):
         df_list = list()
-        for m in range(30):
-            data = torch.load(os.path.join(f"models/2016/{m}.pt"),weights_only=False)
+        for m in range(3):
+            data = torch.load(os.path.join(f"models/2025/{m}.pt"),weights_only=False)
             trained_model = QNetwork(OBS_DIM, 4, 128)
             trained_model.load_state_dict(data["model_state"])
             trained_model = trained_model.to("cuda")
             action_labels = data["action_labels"]
             #["down", "ydstogo", "yardline_100",
                         # "score_diff", "seconds_left_in_half", "game_half","posteam_timeouts_remaining","defteam_timeouts_remaining"]
-            game_state = [float(down),0.1,0.5,0,0.5, 1,3,3]
+            game_state = [float(down),1.0,0.5,0,0.5, 1,3,3]
             model = xgb.XGBClassifier()
-            model.load_model(f"policy/2016/baseline_{m}.ubj")
+            model.load_model(f"policy/2025/baseline_{m}.ubj")
             action_space = ["pass","run","punt","field_goal"]
             rows = list()
-            for i in range(1, 100):
+            for i in tqdm(range(10, 100)):
                 game_state[2] = i*1.0/100.0
                         
                 row  = get_action_values(trained_model, np.array(game_state), action_labels, "cuda")
@@ -83,4 +83,4 @@ if __name__ == "__main__":
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig("EP_ovr.png")
+    plt.savefig("EP_ovr_2017.png")

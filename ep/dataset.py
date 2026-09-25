@@ -23,10 +23,8 @@ class NFLTransitionDataset(Dataset):
 
 
 
-OBS_COLS      = ["down", "ydstogo", "yardline_100",
-                 "score_diff", "seconds_left_in_half", "game_half","posteam_timeouts_remaining","defteam_timeouts_remaining"]
-NEXT_OBS_COLS = ["next_down", "next_ydstogo", "next_yardline_100",
-                 "next_score_diff", "next_seconds_left_in_half", "next_game_half","next_posteam_timeouts_remaining","next_defteam_timeouts_remaining"]
+OBS_COLS      = ["down", "ydstogo", "yardline_100", "seconds_left_in_half", "game_half","posteam_timeouts_remaining","defteam_timeouts_remaining"]
+NEXT_OBS_COLS = ["next_down", "next_ydstogo", "next_yardline_100", "next_seconds_left_in_half", "next_game_half","next_posteam_timeouts_remaining","next_defteam_timeouts_remaining"]
 ACTION_COL    = "action"       # play_type string → label-encoded int
 REWARD_COL    = "reward"
 DONE_COL      = "terminal_play"

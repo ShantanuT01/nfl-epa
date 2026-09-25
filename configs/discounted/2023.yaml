@@ -1,0 +1,15 @@
+train_start_season: 2012
+train_end_season: 2022
+test_season: 2023
+epochs: 50
+cql_alpha: 10
+lr: 0.0003
+batch_size: 512
+gamma: 0.99
+hidden_dim: 128
+target_update_freq: 10000
+checkpoint_path: models/2023/
+device: cuda
+start_seed: 0
+end_seed: 29
+data: data/offline_rl.parquet
