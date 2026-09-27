@@ -9,7 +9,7 @@ gamma: 0.99
 hidden_dim: 128
 target_update_freq: 10000
 checkpoint_path: models/2016/
-device: cuda
+device: mps
 start_seed: 0
 end_seed: 9
 data: data/offline_rl.parquet
