@@ -24,21 +24,24 @@ if __name__ == "__main__":
     color_map = {1: "red",2:"green",3:"blue",4:"purple"}
     for down in range(1,5):
         df_list = list()
-        for m in range(5):
-            data = torch.load(os.path.join(f"models/2025/{m}.pt"),weights_only=False)
+        for m in range(1):
+            data = torch.load(os.path.join(f"models/2021/{m}.pt"),weights_only=False)
             trained_model = QNetwork(OBS_DIM, 4, 128)
             trained_model.load_state_dict(data["model_state"])
             trained_model = trained_model.to("cuda")
             action_labels = data["action_labels"]
             #["down", "ydstogo", "yardline_100",
                         # "score_diff", "seconds_left_in_half", "game_half","posteam_timeouts_remaining","defteam_timeouts_remaining"]
-            game_state = [float(down),1.0,0.5,0,0.5, 1,3,3]
+         
             model = xgb.XGBClassifier()
-            model.load_model(f"policy/2025/baseline_{m}.ubj")
+            model.load_model(f"policy/2021/baseline_{m}.ubj")
             action_space = ["pass","run","punt","field_goal"]
             rows = list()
             for i in tqdm(range(10, 100)):
-                game_state[2] = i*1.0/100.0
+                downs = [0] * 4
+                downs[down - 1] = 1
+                game_state = downs + [1.0,0.5,0.5, 1,1,1]
+                game_state[5] = i*1.0/100.0
                         
                 row  = get_action_values(trained_model, np.array(game_state), action_labels, "cuda")
                 action_probs = model.predict_proba([np.array(game_state)])[0]
@@ -74,9 +77,9 @@ if __name__ == "__main__":
         plt.plot(x, y, '-', markersize=3, color=color_map[down], label=f'{label_map[down]}')
 
         # Fill the unique area between (y - SD) and (y + SD) for each point
-        plt.fill_between(x, y - 1 * std_devs, y + 1 * std_devs, color=color_map[down], alpha=0.2, label='±1 SD Region')
+      #  plt.fill_between(x, y - 1 * std_devs, y + 1 * std_devs, color=color_map[down], alpha=0.2, label='±1 SD Region')
 
-    plt.title('EP by Down and Field Position - 1 Yard to Go')
+    plt.title('EP by Down and Field Position - 10 Yards to Go')
     plt.xlabel('Yards to Opponent\'s End Zone')
     plt.ylabel('EP')
     plt.grid(True, alpha=0.6)
