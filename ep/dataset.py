@@ -23,13 +23,13 @@ class NFLTransitionDataset(Dataset):
 
 
 
-OBS_COLS      = ["down", "ydstogo", "yardline_100", "seconds_left_in_half", "game_half","posteam_timeouts_remaining","defteam_timeouts_remaining"]
-NEXT_OBS_COLS = ["next_down", "next_ydstogo", "next_yardline_100", "next_seconds_left_in_half", "next_game_half","next_posteam_timeouts_remaining","next_defteam_timeouts_remaining"]
+OBS_COLS      = ["first_down", "second_down","third_down","fourth_down", "ydstogo", "yardline_100", "seconds_left_in_half", "game_half","posteam_timeouts_remaining","defteam_timeouts_remaining"]
+NEXT_OBS_COLS = ["next_first_down", "next_second_down","next_third_down","next_fourth_down", "next_ydstogo", "next_yardline_100", "next_seconds_left_in_half", "next_game_half","next_posteam_timeouts_remaining","next_defteam_timeouts_remaining"]
 ACTION_COL    = "action"       # play_type string → label-encoded int
 REWARD_COL    = "reward"
 DONE_COL      = "terminal_play"
 COP_COL       = "change_of_possession"  # +1 same team, -1 opponent gets ball
-
+PLAY_TYPE = "play_type"
 OBS_DIM = len(OBS_COLS)       # 6
 
 
@@ -65,18 +65,18 @@ def load_parquet(path: str, start_season: int, end_season: int) -> tuple[np.ndar
     # ── action labels: SQL encodes pass=0, run=1, punt=2, other=3
     # Derive the index→name mapping from the action string column
     action_labels = (
-        df[["play_type", ACTION_COL]]
+        df[[PLAY_TYPE, ACTION_COL]]
         .drop_duplicates()
-        .sort_values("play_type")
-        .set_index("play_type")[ACTION_COL]
+        .sort_values(PLAY_TYPE)
+        .set_index(PLAY_TYPE)[ACTION_COL]
         .to_dict()
     )  # {0: "pass", 1: "run", 2: "punt", 3: "..."}
-    n_actions = df["play_type"].max() + 1
+    n_actions = df[PLAY_TYPE].max() + 1
     print(f"  Action mapping: {action_labels}\n")
 
     # ── observations (game_half already 0/1/2 integer from SQL)
     obs      = df[OBS_COLS].astype(np.float32).values          # (N, 6)
-    actions  = df["play_type"].astype(np.int64).values          # (N,) SQL-encoded
+    actions  = df[PLAY_TYPE].astype(np.int64).values          # (N,) SQL-encoded
     rewards  = df[REWARD_COL].astype(np.float32).values         # (N,)
     dones    = df[DONE_COL].astype(np.float32).values           # (N,)
 

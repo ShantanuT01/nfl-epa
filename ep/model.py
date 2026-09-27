@@ -18,12 +18,12 @@ from blitz.utils import variational_estimator
 from xgboost import XGBClassifier
 
 # Behavior Cloning
-def train_bc_baseline_model(start_season, end_season, eval_season,bc_path,seed):
-    df = pd.read_parquet("data/offline_rl.parquet")
+def train_bc_baseline_model(parquet_path,start_season, end_season, eval_season,bc_path,seed):
+    df = pd.read_parquet(parquet_path)
     X_test = df[df.season == eval_season][OBS_COLS].to_numpy()
     test_df = df[df.season == eval_season]
     df = df[df.season.between(start_season, end_season)]
-    y = df["play_type"].to_numpy()
+    y = df[PLAY_TYPE].to_numpy()
     X = df[OBS_COLS].to_numpy()
 
     model = RandomForestClassifier(random_state=seed)
@@ -35,12 +35,12 @@ def train_bc_baseline_model(start_season, end_season, eval_season,bc_path,seed):
     test_df.to_parquet(bc_path,index=False, compression="zstd")
 
 # Behavior Cloning XGBoost
-def train_bc_xgboost_model(start_season, end_season, eval_season,bc_predictions_path,bc_model_path, seed):
-    df = pd.read_parquet("data/offline_rl.parquet")
+def train_bc_xgboost_model(parquet_path, start_season, end_season, eval_season,bc_predictions_path,bc_model_path, seed):
+    df = pd.read_parquet(parquet_path)
     X_test = df[df.season == eval_season][OBS_COLS].to_numpy()
     test_df = df[df.season == eval_season]
     df = df[df.season.between(start_season, end_season)]
-    y = df["play_type"].to_numpy()
+    y = df[PLAY_TYPE].to_numpy()
     X = df[OBS_COLS].to_numpy()
 
     model = XGBClassifier(seed=seed, booster='dart', rate_drop=0.2, skip_drop=0.2)
@@ -105,6 +105,7 @@ class QNetwork(nn.Module):
         #return (15 - (-6))/2.0 * torch.tanh(self.net(obs)) + (15 - 6)/2.0
        # return self.net(obs)
         return torch.tanh(self.net(obs)) * 6
+     
 
 
 @variational_estimator

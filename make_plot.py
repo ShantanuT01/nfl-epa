@@ -24,7 +24,7 @@ if __name__ == "__main__":
     color_map = {1: "red",2:"green",3:"blue",4:"purple"}
     for down in range(1,5):
         df_list = list()
-        for m in range(3):
+        for m in range(5):
             data = torch.load(os.path.join(f"models/2025/{m}.pt"),weights_only=False)
             trained_model = QNetwork(OBS_DIM, 4, 128)
             trained_model.load_state_dict(data["model_state"])

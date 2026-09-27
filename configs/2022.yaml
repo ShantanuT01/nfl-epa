@@ -1,4 +1,4 @@
-train_start_season: 2011
+train_start_season: 2005
 train_end_season: 2021
 test_season: 2022
 epochs: 50
@@ -11,5 +11,5 @@ target_update_freq: 10000
 checkpoint_path: models/2022/
 device: cuda
 start_seed: 0
-end_seed: 29
+end_seed: 9
 data: data/offline_rl.parquet

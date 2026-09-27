@@ -87,11 +87,17 @@ if __name__ == "__main__":
         q_online = QNetwork(OBS_DIM, 4, args.hidden_dim).to(args.device)
         q_target = QNetwork(OBS_DIM, 4, args.hidden_dim).to(args.device)
         q_target.load_state_dict(q_online.state_dict())
+        
+        # train policy pi first 
         Path(args.checkpoint_path).mkdir(parents=True, exist_ok=True)
-        trained_model, action_labels = train_double_dqn(args, q_online, q_target)
-        data = torch.load(os.path.join(args.checkpoint_path,f"{seed}.pt"),weights_only=False)
         Path(f"policy/{args.test_season}").mkdir(parents=True, exist_ok=True)
         train_bc_xgboost_model(args.data, args.train_start_season, args.train_end_season, args.test_season,f"policy/{args.test_season}/baseline_{args.seed}.parquet",f"policy/{args.test_season}/baseline_{args.seed}.ubj", args.seed)
+        
+        
+        
+        trained_model, action_labels = train_double_dqn(args, q_online, q_target)
+        data = torch.load(os.path.join(args.checkpoint_path,f"{seed}.pt"),weights_only=False)
+        
         action_labels = data["action_labels"]
         trained_model = QNetwork(OBS_DIM, len(action_labels), args.hidden_dim)
         trained_model.load_state_dict(data["model_state"])
