@@ -24,9 +24,9 @@ if __name__ == "__main__":
     color_map = {1: "red",2:"green",3:"blue",4:"purple"}
     for down in range(1,5):
         df_list = list()
-        for m in range(1):
-            data = torch.load(os.path.join(f"models/2021/{m}.pt"),weights_only=False)
-            trained_model = QNetwork(OBS_DIM, 4, 128)
+        for m in range(20):
+            data = torch.load(os.path.join(f"models/2020/{m}.pt"),weights_only=False)
+            trained_model = QNetwork(OBS_DIM, 4, 64)
             trained_model.load_state_dict(data["model_state"])
             trained_model = trained_model.to("cuda")
             action_labels = data["action_labels"]
@@ -34,7 +34,7 @@ if __name__ == "__main__":
                         # "score_diff", "seconds_left_in_half", "game_half","posteam_timeouts_remaining","defteam_timeouts_remaining"]
          
             model = xgb.XGBClassifier()
-            model.load_model(f"policy/2021/baseline_{m}.ubj")
+            model.load_model(f"policy/2020/baseline_{m}.ubj")
             action_space = ["pass","run","punt","field_goal"]
             rows = list()
             for i in tqdm(range(10, 100)):
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         plt.plot(x, y, '-', markersize=3, color=color_map[down], label=f'{label_map[down]}')
 
         # Fill the unique area between (y - SD) and (y + SD) for each point
-      #  plt.fill_between(x, y - 1 * std_devs, y + 1 * std_devs, color=color_map[down], alpha=0.2, label='±1 SD Region')
+        plt.fill_between(x, y - 1 * std_devs, y + 1 * std_devs, color=color_map[down], alpha=0.2, label='±1 SD Region')
 
     plt.title('EP by Down and Field Position - 10 Yards to Go')
     plt.xlabel('Yards to Opponent\'s End Zone')
@@ -86,4 +86,4 @@ if __name__ == "__main__":
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig("EP_ovr_2017.png")
+    plt.savefig("EP_ovr_2020.png")
