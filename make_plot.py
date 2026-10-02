@@ -25,7 +25,7 @@ if __name__ == "__main__":
     for down in range(1,5):
         df_list = list()
         for m in range(20):
-            data = torch.load(os.path.join(f"models/2020/{m}.pt"),weights_only=False)
+            data = torch.load(os.path.join(f"models/2025/{m}.pt"),weights_only=False)
             trained_model = QNetwork(OBS_DIM, 4, 64)
             trained_model.load_state_dict(data["model_state"])
             trained_model = trained_model.to("cuda")
@@ -34,7 +34,7 @@ if __name__ == "__main__":
                         # "score_diff", "seconds_left_in_half", "game_half","posteam_timeouts_remaining","defteam_timeouts_remaining"]
          
             model = xgb.XGBClassifier()
-            model.load_model(f"policy/2020/baseline_{m}.ubj")
+            model.load_model(f"policy/2025/baseline_{m}.ubj")
             action_space = ["pass","run","punt","field_goal"]
             rows = list()
             for i in tqdm(range(10, 100)):
@@ -46,11 +46,16 @@ if __name__ == "__main__":
                 row  = get_action_values(trained_model, np.array(game_state), action_labels, "cuda")
                 action_probs = model.predict_proba([np.array(game_state)])[0]
                 ep = 0.0
+                prob_sum = 0.0
                 for ai, action in enumerate(action_space):
-                    ep += action_probs[ai] * row[action]
+                    if action_probs[ai] >= 0.01:
+                        ep += action_probs[ai] * row[action]
+                        prob_sum += action_probs[ai]
+                
+                    
                 
                 row["yards_away_from_end_zone"] = i
-                row["ep"] = ep
+                row["ep"] = ep/prob_sum
                 rows.append(row)
             df_list.append(pd.DataFrame(rows))#.to_parquet("test.parquet",index=False)
         print(len(df_list))
@@ -79,11 +84,11 @@ if __name__ == "__main__":
         # Fill the unique area between (y - SD) and (y + SD) for each point
         plt.fill_between(x, y - 1 * std_devs, y + 1 * std_devs, color=color_map[down], alpha=0.2, label='±1 SD Region')
 
-    plt.title('EP by Down and Field Position - 10 Yards to Go')
+    plt.title('EP by Down and Field Position - 10 Yards to Go - Start of 4th Quarter')
     plt.xlabel('Yards to Opponent\'s End Zone')
     plt.ylabel('EP')
     plt.grid(True, alpha=0.6)
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig("EP_ovr_2020.png")
+    plt.savefig("EP_in_2025.png")

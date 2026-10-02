@@ -1,6 +1,6 @@
 WITH
   episodes AS (
-    SELECT 
+    SELECT
       dqn.*,
       ep.next_scoring_drive,
       CASE WHEN ep.next_score_label = 0 THEN -6
@@ -10,39 +10,46 @@ WITH
            WHEN ep.next_score_label = 4 THEN 2
            WHEN ep.next_score_label = 5 THEN 3
            ELSE 6 END AS episode_points
-    FROM 'evaluations/2023/*.parquet' dqn
-    LEFT JOIN 'data/ep_labels.parquet' ep
-      ON ep.play_id = dqn.play_id 
-      AND ep.game_id = dqn.game_id
+    FROM ep.evaluations dqn
+
+    LEFT JOIN ep.ep_labels ep
+      USING (play_id, game_id, season)
+
+
   ),
 
-  epas AS (
+  epas_per_play_and_seed AS (
     SELECT
       l.seed,
-      l.game_id, 
+      l.game_id,
       l.play_id,
       l.next_play_id,
       l.season,
       l.posteam,
       l.defteam,
-      CASE WHEN r.posteam = l.posteam THEN r.ep
-           ELSE -r.ep END                                AS ep_after,
-      CASE WHEN l.action = 'run'        THEN l.run 
-           WHEN l.action = 'pass'       THEN l.pass 
+    CASE
+      WHEN l.next_play_id IS NULL THEN 0                              -- genuine terminal: V(s') = 0
+      WHEN r.play_id IS NULL THEN NULL                                -- next play expected but missing: flag, don't fabricate 0
+      WHEN r.posteam = l.posteam THEN r.EP_epsilon
+      ELSE -r.EP_epsilon END                                AS ep_after,
+      CASE WHEN l.action = 'run'        THEN l.run
+           WHEN l.action = 'pass'       THEN l.pass
            WHEN l.action = 'field_goal' THEN l.field_goal
-           ELSE l.punt END                               AS qsa, 
-      l.ep                                               AS ep_before,
-      l.reward + ep_after - ep_before                    AS epa,
-      l.next_scoring_drive, 
+           ELSE l.punt END                               AS qsa,
+      l.EP_epsilon                                               AS ep_before,
+     l.reward + ep_after - ep_before                 AS epa,
+      l.next_scoring_drive,
       qsa - ep_before                                    AS advantage,
       l.episode_points,
       GREATEST(l.pass, l.run, l.punt, l.field_goal) - qsa AS opportunity_cost,
-      l.reward + 0.8 * ep_after - ep_before              AS td_error,
-      qsa - CASE GREATEST(l.pass_prob, l.punt_prob, l.field_goal_prob, l.run_prob) 
-               WHEN l.pass_prob       THEN l.pass 
-               WHEN l.run_prob        THEN l.run 
+      l.reward + 0.99 * ep_after - ep_before              AS td_error,
+      qsa - CASE GREATEST(l.pass_prob, l.punt_prob, l.field_goal_prob, l.run_prob)
+               WHEN l.pass_prob       THEN l.pass
+               WHEN l.run_prob        THEN l.run
                WHEN l.punt_prob       THEN l.punt
                ELSE l.field_goal END                     AS policy_gap,
+      GREATEST(l.pass, l.run, l.punt, l.field_goal)  - ep_before AS regret,
+      regret * advantage as weighted_advantage,
       CASE GREATEST(l.pass, l.run, l.punt, l.field_goal)
            WHEN l.pass       THEN 'pass'
            WHEN l.run        THEN 'run'
@@ -66,27 +73,102 @@ WITH
       )                                                  AS action_cross_entropy
 
     FROM episodes l
-    LEFT JOIN episodes r 
-      ON l.next_play_id = r.play_id 
+    LEFT JOIN episodes r
+      ON l.next_play_id = r.play_id
       AND r.game_id = l.game_id
       AND r.seed = l.seed
-    --WHERE l.game_id = '2024_22_KC_PHI'
+    --WHERE l.game_id = '2016_21_NE_ATL'
     WHERE l.season_type = 'REG'
   ),
 
-  offenses AS (
-    SELECT 
+  -- ==========================================================================
+  -- Mean play EP: everything above this point is byte-for-byte what you
+  -- wrote -- opportunity_cost, policy_gap, and greedy_action all still use
+  -- each seed's own GREATEST() over that seed's own Q-values, untouched.
+  --
+  -- The only change is the V(s) baseline that epa / advantage / regret /
+  -- weighted_advantage / td_error are computed against: instead of each
+  -- seed's own EP_epsilon, they now use the ensemble mean of EP_epsilon
+  -- across all 10 seeds for that specific play. This removes seed-to-seed
+  -- model noise from the value baseline itself, the same way averaging an
+  -- ensemble's predictions is supposed to.
+  --
+  -- mean_ep_before / mean_ep_after are computed with a window function
+  -- (PARTITION BY game_id, play_id, no ORDER BY -- a plain full-partition
+  -- average, not a running one) rather than a GROUP BY, so every per-seed
+  -- row is preserved for opportunity_cost / policy_gap / greedy_action and
+  -- for the seed-level STDDEV reporting further downstream.
+  --
+  -- epa / advantage / regret / td_error are re-derived from each metric's
+  -- own existing definition rather than re-reading raw reward or Q columns,
+  -- so epas_per_play_and_seed above never had to expose a new column:
+  --   reward       = epa    - ep_after + ep_before   (epa's own definition)
+  --   best_q_legal = regret + ep_before              (regret's own definition)
+  -- Substituting the mean baseline into those same definitions gives the
+  -- corrected values below. NULL handling: ep_after is NULL for a play
+  -- whose next play is expected but missing (see the CASE above); AVG()
+  -- ignores NULLs, so mean_ep_after is computed from whichever seeds have
+  -- a value, and is NULL only if every seed is NULL for that play, same as
+  -- before.
+  -- ==========================================================================
+  epas_with_mean_ep AS (
+    SELECT
+      *,
+      AVG(ep_before) OVER (PARTITION BY game_id, play_id) AS mean_ep_before,
+      AVG(ep_after)  OVER (PARTITION BY game_id, play_id) AS mean_ep_after
+    FROM epas_per_play_and_seed
+  ),
+
+  epas AS (
+    SELECT
       seed,
+      game_id,
+      play_id,
+      next_play_id,
+      season,
+      posteam,
+      defteam,
+      next_scoring_drive,
+      episode_points,
+      action,
+      action_cross_entropy,
+
+      -- Untouched fundamental metrics -- passed through exactly as computed
+      -- above, from each seed's own Q-values.
+      qsa,
+      opportunity_cost,
+      policy_gap,
+      greedy_action,
+
+      -- Mean play EP: the ensemble-consensus V(s) baseline for this play.
+      mean_ep_before                                                       AS ep_before,
+      mean_ep_after                                                        AS ep_after,
+
+      (epa - ep_after + ep_before) + mean_ep_after - mean_ep_before        AS epa,
+      qsa - mean_ep_before                                                 AS advantage,
+      (regret + ep_before) - mean_ep_before                                AS regret,
+      ((regret + ep_before) - mean_ep_before) * (qsa - mean_ep_before)     AS weighted_advantage,
+      (epa - ep_after + ep_before) + 0.99 * mean_ep_after - mean_ep_before AS td_error
+
+    FROM epas_with_mean_ep
+  ),
+
+  offenses AS (
+    SELECT
+      seed,
+      season,
       posteam                                            AS team,
-      AVG(advantage)                                     AS avg_advantage, 
-      AVG(td_error)                                      AS avg_td_error, 
+      AVG(advantage)                                     AS avg_advantage,
+      AVG(td_error)                                      AS avg_td_error,
       AVG(policy_gap)                                    AS avg_policy_gap,
-      SUM(policy_gap)                                    AS cumulative_policy_gap, 
+      SUM(policy_gap)                                    AS cumulative_policy_gap,
       AVG(epa)                                           AS epa_per_play,
       AVG(opportunity_cost)                              AS avg_opportunity_cost,
-      SUM(epa)                                           AS cumulative_epa, 
+      SUM(epa)                                           AS cumulative_epa,
       SUM(opportunity_cost)                              AS cumulative_opportunity_cost,
       SUM(advantage)                                     AS cumulative_advantage,
+      SUM(weighted_advantage)/SUM(regret)                    AS avg_weighted_advantage,
+      AVG(regret)                                         AS regret,
       COUNT(DISTINCT game_id)                            AS games_played,
       AVG(CASE WHEN greedy_action = action THEN 1 ELSE 0 END) * 100 AS offense_agreement,
       AVG(CASE WHEN action = 'pass' THEN CASE WHEN greedy_action = action THEN 1 ELSE 0 END END) * 100 AS pass_agreement,
@@ -130,12 +212,13 @@ WITH
       AVG(action_cross_entropy)                          AS off_cross_entropy
 
     FROM epas
-    GROUP BY seed, posteam
+    GROUP BY seed, posteam, season
   ),
 
   defenses AS (
-    SELECT 
+    SELECT
       seed,
+      season,
       defteam                                            AS team,
       AVG(-epa)                                          AS def_epa_suppressed_per_play,
       SUM(-epa)                                          AS def_cumulative_epa_suppressed,
@@ -173,12 +256,13 @@ WITH
       AVG(action_cross_entropy)                          AS opp_cross_entropy
 
     FROM epas
-    GROUP BY seed, defteam
+    GROUP BY seed, defteam, season
   ),
 
   combined_per_seed AS (
     SELECT
       o.seed,
+      o.season,
       o.team,
       o.games_played,
       o.avg_advantage,
@@ -189,7 +273,9 @@ WITH
       o.cumulative_epa                                   AS off_cumulative_epa,
       o.cumulative_opportunity_cost,
       o.cumulative_advantage,
+      o.avg_weighted_advantage,
       o.offense_agreement,
+      o.regret,
       o.cumulative_policy_gap,
       o.pass_agreement,
       o.run_agreement,
@@ -232,23 +318,26 @@ WITH
       d.n_opp_fg_agreement_plays,
       d.epa_allowed_run,
       d.epa_allowed_pass,
+      d.epa_allowed_per_play,
       d.cumulative_epa_allowed_run,
       d.cumulative_epa_allowed_pass,
       d.n_runs_faced,
       d.n_passes_faced,
       d.n_punts_faced,
       d.n_fgs_faced,
+
       d.pass_rate_faced,
       d.opp_cross_entropy,
       o.epa_per_play - d.epa_allowed_per_play            AS net_epa_per_play,
       o.cumulative_epa - d.cumulative_epa_allowed        AS net_cumulative_epa
     FROM offenses o
-    JOIN defenses d ON o.seed = d.seed AND o.team = d.team
+    JOIN defenses d USING (seed, season, team)
   ),
 
 season_stats AS (
 SELECT
   team,
+  season,
   AVG(games_played)                                      AS games_played,
   COUNT(DISTINCT seed)                                   AS n_seeds,
 
@@ -257,7 +346,8 @@ SELECT
   ROUND(STDDEV(off_epa_per_play), 4)                     AS off_epa_per_play_sd,
   ROUND(AVG(avg_advantage), 3)                           AS avg_advantage,
   ROUND(STDDEV(avg_advantage), 4)                        AS avg_advantage_sd,
-
+  ROUND(AVG(avg_weighted_advantage), 3)                  AS avg_weighted_advantage,
+    ROUND(AVG(regret), 3)                  AS avg_regret,
   -- Balanced advantage: equal weight per action category, correcting for passing
   -- frequency bias in avg_advantage. NULL categories (no plays of that type)
   -- are excluded from both numerator and denominator via COALESCE + NULLIF.
@@ -341,6 +431,8 @@ SELECT
   ROUND(STDDEV(off_epa_per_play_pass), 4)                AS off_epa_pass_sd,
   ROUND(AVG(off_cumulative_epa_run), 3)                  AS off_cumulative_epa_run,
   ROUND(AVG(off_cumulative_epa_pass), 3)                 AS off_cumulative_epa_pass,
+  ROUND(AVG(epa_allowed_run), 3) as def_epa_run,
+  ROUND(AVG(epa_allowed_pass), 3) as def_epa_pass,
   ROUND(AVG(offense_success_rate), 3)                    AS offense_success_rate,
   ROUND(AVG(defense_success_rate), 3)                    AS defense_success_rate,
   ROUND(AVG(n_runs), 0)                                  AS n_runs,
@@ -348,8 +440,6 @@ SELECT
   ROUND(AVG(n_punts), 0)                                 AS n_punts,
   ROUND(AVG(n_fgs), 0)                                   AS n_fgs,
   ROUND(AVG(pass_rate), 3)                               AS pass_rate,
-
-  -- Defensive overall
   ROUND(AVG(epa_allowed_per_play), 3)                    AS epa_allowed_per_play,
   ROUND(STDDEV(epa_allowed_per_play), 4)                 AS epa_allowed_per_play_sd,
   ROUND(AVG(cumulative_epa_allowed / games_played), 3)   AS epa_allowed_per_game,
@@ -412,18 +502,30 @@ SELECT
   ROUND(AVG(net_epa_per_play), 3)                        AS net_epa_per_play,
   ROUND(STDDEV(net_epa_per_play), 4)                     AS net_epa_per_play_sd,
   ROUND(AVG(net_cumulative_epa / games_played), 3)       AS net_epa_per_game,
-  ROUND(STDDEV(net_cumulative_epa / games_played), 4)    AS net_epa_per_game_sd
+  ROUND(STDDEV(net_cumulative_epa / games_played), 4)    AS net_epa_per_game_sd,
 
+  -- advantage
+  ROUND(AVG(avg_advantage_pass),3) AS avg_advantage_pass,
+  ROUND(AVG(avg_advantage_run), 3) AS avg_advantage_run,
+  ROUND(AVG(avg_advantage_punt), 3) AS avg_advantage_punt,
+  ROUND(AVG(avg_advantage_fg), 3) AS avg_advantage_fg
 FROM combined_per_seed
-GROUP BY team
+GROUP BY team, season
 ORDER BY opp_cross_entropy DESC
 )
 
 SELECT
+season,
   team,
   net_epa_per_play,
+--  net_epa_per_play_sd,
+    off_epa_per_play,
+  epa_allowed_per_play,
   off_epa_run,
+
   off_epa_pass,
+  def_epa_run,
+  def_epa_pass,
   offense_agreement_balanced,
   n_off_agreement_categories,
   opposing_offense_agreement_balanced,
@@ -432,12 +534,20 @@ SELECT
   run_agreement,
   punt_agreement,
   fg_agreement,
-  avg_advantage,
+
   avg_advantage_sd,
   avg_advantage_balanced,
   avg_opportunity_cost,
   avg_opportunity_cost_sd,
   policy_gap,
-  policy_gap_sd
+  policy_gap_sd,
+  avg_advantage_pass,
+  avg_advantage_run,
+  avg_advantage_punt,
+  avg_advantage_fg,
+  avg_weighted_advantage,
+    avg_advantage,
+  avg_regret
 FROM season_stats
-ORDER BY net_epa_per_play DESC
+WHERE season = 2017
+ORDER BY net_epa_per_play DESC;
